@@ -7,9 +7,12 @@
  * each enabled server runs as its own child instance of the official
  * `@deepseek-ai/dsh-mcp-client` plugin, so naming, reconnects, resources and
  * image results behave exactly as for an MCP row written by hand. Switching a
- * server off disposes its child; editing it restarts only that child.
+ * server off disposes its child; editing it restarts only that child. Each
+ * child sees a gated `tools` service (see gate.ts), so single tools can be
+ * switched off without touching the connection.
  *
- * Status — connected / retrying / gave up, the last error, the tool list — is
+ * Status — connected / retrying / gave up, the last error, the tools with
+ * their descriptions and input schemas — is
  * read from the client's own log narration and served to the page at
  * `GET /dsh-custom-mcp/status`, behind the Host's request gate.
  */
@@ -18,6 +21,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context, Volatile } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
 import * as mcpClient from '@deepseek-ai/dsh-mcp-client'
+import { ToolGate, type ToolRegistry } from './gate.ts'
 import { connectionKey, normalizeEntry, problemOf, ServerEntry, toClientConfig } from './servers.ts'
 import { expandHome, mergePath, readLoginShellPath, referencesOf, resolveCommand, substitute } from './resolve.ts'
 import { parseLabel, StatusBoard, type LogLevel } from './status.ts'
@@ -55,12 +59,12 @@ interface ChildFiber {
 interface Running {
   key: string
   fiber: ChildFiber
+  gate: ToolGate
   secretRefs: string[]
 }
 
 type Handler = (request: IncomingMessage, response: ServerResponse) => void | Promise<void>
 interface WebServerLike { register(route: { kind: 'exact' | 'prefix'; path: string; handler: Handler }): () => void }
-interface ToolsLike { view?(scope?: unknown): { visible: Map<string, unknown> } }
 interface CredentialsLike { resolve(ref: string): Promise<{ value?: string } | undefined> }
 interface ConnectionLike { requestRejection?(request: IncomingMessage): number | undefined }
 interface LooseContext {
@@ -68,8 +72,9 @@ interface LooseContext {
   inject(deps: string[], callback: (child: any) => void): void
   on(event: string, listener: (...args: any[]) => unknown): () => void
   plugin(plugin: unknown, config?: unknown): ChildFiber
+  extend(meta: Record<string, unknown>): LooseContext
   fiber: unknown
-  tools: ToolsLike
+  tools: ToolRegistry
   logger: Context['logger']
   effect(execute: () => () => unknown, label?: string): unknown
 }
@@ -102,15 +107,16 @@ export function apply(ctx: Context, config: Config): void {
     return hit?.value || process.env[ref] || undefined
   }
 
-  const toolsOf = (server: string): string[] => {
+  const catalogOf = (server: string) => running.get(server)?.gate.list() ?? []
+
+  /** Stop a child and withdraw whatever tools it left registered. */
+  const stop = async (server: string, run: Running): Promise<void> => {
     try {
-      const prefix = `mcp__${server}__`
-      const visible = host.tools.view?.()?.visible
-      if (!visible) return []
-      return [...visible.keys()].filter(key => key.startsWith(prefix)).map(key => key.slice(prefix.length)).sort()
-    } catch {
-      return []
+      await run.fiber.dispose()
+    } catch (error) {
+      ctx.logger.warn('stopping MCP server "%s" failed: %s', server, error)
     }
+    run.gate.close()
   }
 
   // ---- status from the MCP client's own narration -------------------------
@@ -170,14 +176,19 @@ export function apply(ctx: Context, config: Config): void {
     }
     if (disposed) return
 
+    const gate = new ToolGate(`mcp__${server}__`, host.tools, entry.disabledTools, (tool, error) => {
+      board.log(server, 'warn', `switching tool ${tool} failed: ${error instanceof Error ? error.message : String(error)}`)
+    })
     let fiber: ChildFiber
     try {
-      fiber = host.plugin(mcpClient, toClientConfig(launch))
+      // `extend` shadows `tools` for this child alone; the client registers into the gate.
+      fiber = host.extend({ tools: gate.facade(host.tools) }).plugin(mcpClient, toClientConfig(launch))
     } catch (error) {
+      gate.close()
       board.enter(server, 'failed', { lastError: error instanceof Error ? error.message : String(error), command })
       return
     }
-    const run: Running = { key: connectionKey(entry), fiber, secretRefs: refs.secrets }
+    const run: Running = { key: connectionKey(entry), fiber, gate, secretRefs: refs.secrets }
     running.set(server, run)
     board.enter(server, 'starting', { command })
     fiber.await().then(
@@ -209,13 +220,12 @@ export function apply(ctx: Context, config: Config): void {
     // Stop first: a restarted server must release its name before it is forked again.
     for (const [server, run] of [...running]) {
       const next = wanted.get(server)
-      if (next && connectionKey(next) === run.key && !forced.has(server)) continue
-      running.delete(server)
-      try {
-        await run.fiber.dispose()
-      } catch (error) {
-        ctx.logger.warn('stopping MCP server "%s" failed: %s', server, error)
+      if (next && connectionKey(next) === run.key && !forced.has(server)) {
+        run.gate.update(next.disabledTools)
+        continue
       }
+      running.delete(server)
+      await stop(server, run)
     }
 
     board.retain(seen)
@@ -271,7 +281,7 @@ export function apply(ctx: Context, config: Config): void {
 
   host.effect(() => () => {
     disposed = true
-    const stopping = [...running.values()].map(run => run.fiber.dispose().catch(() => {}))
+    const stopping = [...running].map(([server, run]) => stop(server, run))
     running.clear()
     return Promise.all(stopping)
   }, 'dsh-custom-mcp: servers')
@@ -301,7 +311,7 @@ export function apply(ctx: Context, config: Config): void {
       handler: (request, response) => {
         if (refuse(request, response)) return
         if (request.method !== 'GET') return sendJson(response, 405, { error: 'method not allowed' })
-        sendJson(response, 200, { version: 1, servers: board.snapshot(toolsOf) })
+        sendJson(response, 200, { version: 1, servers: board.snapshot(catalogOf) })
       },
     }), 'dsh-custom-mcp: status route')
 
@@ -324,7 +334,7 @@ export function apply(ctx: Context, config: Config): void {
         if (typeof server !== 'string') return sendJson(response, 400, { error: 'name required' })
         forced.add(server)
         await schedule()
-        sendJson(response, 200, { ok: true, servers: board.snapshot(toolsOf) })
+        sendJson(response, 200, { ok: true, servers: board.snapshot(catalogOf) })
       },
     }), 'dsh-custom-mcp: restart route')
   })

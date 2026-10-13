@@ -11,7 +11,7 @@ const outdir = join(project, 'node_modules/.cache/dsh-custom-mcp-test')
 mkdirSync(outdir, { recursive: true })
 await build({
   stdin: {
-    contents: `export * from './src/status.ts'; export * from './src/resolve.ts'; export * from './src/servers.ts'`,
+    contents: `export * from './src/status.ts'; export * from './src/resolve.ts'; export * from './src/servers.ts'; export * from './src/gate.ts'`,
     resolveDir: project,
     loader: 'ts',
   },
@@ -55,6 +55,73 @@ test('StatusBoard redacts secrets and folds phases', () => {
   assert.equal(board.snapshot(() => []).length, 0)
 })
 
+test('StatusBoard reports the catalog, enabled tools only in tools, and redacts it', () => {
+  const board = new host.StatusBoard(3)
+  board.setSecrets('a', ['s3cr3t-value'])
+  board.enter('a', 'connected')
+  const catalog = [
+    { name: 'on', description: 'uses s3cr3t-value', parameters: { type: 'object', properties: { k: { default: 's3cr3t-value' } } }, enabled: true },
+    { name: 'off', description: '', enabled: false },
+  ]
+  const [status] = board.snapshot(() => catalog)
+  assert.deepEqual(status.tools, ['on'])
+  assert.deepEqual(status.catalog.map(tool => tool.name), ['on', 'off'])
+  assert.ok(!JSON.stringify(status).includes('s3cr3t-value'))
+  assert.equal(status.catalog[0].parameters.properties.k.default, '***')
+  board.enter('a', 'disabled')
+  assert.deepEqual(board.snapshot(() => catalog)[0].catalog, [], 'a switched-off server offers nothing')
+})
+
+test('ToolGate forwards switched-on tools and switches in place', () => {
+  const registry = new Map()
+  const real = {
+    register(definition) {
+      if (registry.has(definition.name)) throw new Error(`duplicate ${definition.name}`)
+      registry.set(definition.name, definition)
+      return () => { registry.delete(definition.name) }
+    },
+    other() { return 'passed through' },
+  }
+  const errors = []
+  const gate = new host.ToolGate('mcp__s__', real, ['b'], (tool, error) => errors.push(`${tool}: ${error.message}`))
+  const tools = gate.facade(real)
+  assert.equal(tools.other(), 'passed through')
+  const def = name => ({ name: `mcp__s__${name}`, description: `does ${name}`, parameters: { type: 'object' } })
+  const disposers = ['c', 'a', 'b'].map(name => tools.register(def(name)))
+  assert.deepEqual([...registry.keys()].sort(), ['mcp__s__a', 'mcp__s__c'])
+  assert.deepEqual(gate.list().map(tool => [tool.name, tool.enabled]), [['a', true], ['b', false], ['c', true]])
+  assert.equal(gate.list()[0].description, 'does a')
+  assert.throws(() => tools.register(def('b')), /already registered/, 'duplicates throw like the registry')
+
+  const before = registry.get('mcp__s__a')
+  gate.update(['c'])
+  assert.deepEqual([...registry.keys()].sort(), ['mcp__s__a', 'mcp__s__b'])
+  assert.equal(registry.get('mcp__s__a'), before, 'untouched tools stay registered')
+
+  // A refused re-registration is reported, not thrown.
+  registry.set('mcp__s__c', {})
+  gate.update([])
+  assert.match(errors[0], /^c: duplicate/)
+  registry.delete('mcp__s__c')
+
+  disposers[1]()
+  disposers[1]()
+  assert.ok(!registry.has('mcp__s__a'), 'the client withdrawing a tool unregisters it')
+  assert.deepEqual(gate.list().map(tool => tool.name), ['b', 'c'])
+
+  gate.close()
+  assert.equal(registry.size, 0)
+  tools.register(def('late'))
+  assert.equal(registry.size, 0, 'nothing reaches the registry after close')
+})
+
+test('ToolGate: a refused registration leaves no trace', () => {
+  const real = { register() { throw new Error('conflict') } }
+  const gate = new host.ToolGate('mcp__s__', real, [])
+  assert.throws(() => gate.register({ name: 'mcp__s__x' }), /conflict/)
+  assert.deepEqual(gate.list(), [])
+})
+
 test('servers: problems, keys and client config', () => {
   const base = host.normalizeEntry({ name: 'x', command: 'npx' })
   assert.equal(host.problemOf(base), undefined)
@@ -62,6 +129,9 @@ test('servers: problems, keys and client config', () => {
   assert.match(host.problemOf({ ...base, transport: 'streamable-http', url: 'ftp://a' }), /http/)
   assert.equal(host.problemOf({ ...base, transport: 'streamable-http', url: 'https://${env:HOST}/mcp' }), undefined)
   assert.equal(host.connectionKey(base), host.connectionKey({ ...base, enabled: false, description: 'note' }), 'on/off and notes do not restart')
+  assert.equal(host.connectionKey(base), host.connectionKey({ ...base, disabledTools: ['x'] }), 'switching tools does not restart')
+  assert.deepEqual(base.disabledTools, [])
+  assert.deepEqual(host.normalizeEntry({ name: 'x', disabledTools: ['a', 1, 'a', 'b'] }).disabledTools, ['a', 'b'])
   assert.notEqual(host.connectionKey(base), host.connectionKey({ ...base, args: ['-y'] }))
   assert.equal(host.connectionKey({ ...base, env: { A: '1', B: '2' } }), host.connectionKey({ ...base, env: { B: '2', A: '1' } }))
   const http = host.toClientConfig({ ...base, transport: 'streamable-http', url: 'https://a/mcp', headers: { A: 'b' } })

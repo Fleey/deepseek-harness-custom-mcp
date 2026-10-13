@@ -7,6 +7,8 @@
  * "connected", "retrying 3/10" or "gave up" without patching the client.
  */
 
+import type { ToolInfo } from './gate.ts'
+
 export type Phase =
   | 'disabled' // switched off in settings
   | 'invalid' // cannot start as written (missing command, duplicate name…)
@@ -33,7 +35,10 @@ export interface ServerStatus {
   since: number
   /** Resolved executable for stdio servers. */
   command?: string
+  /** Tools the model can call now. */
   tools: string[]
+  /** Every tool the server offers, switched on or off, with what the page shows on hover. */
+  catalog: ToolInfo[]
   logs: LogLine[]
 }
 
@@ -89,10 +94,18 @@ export class StatusBoard {
     return out
   }
 
+  /** Redact every string inside a JSON value. */
+  private scrub(name: string, value: unknown): unknown {
+    if (typeof value === 'string') return this.redact(name, value)
+    if (Array.isArray(value)) return value.map(item => this.scrub(name, item))
+    if (value === null || typeof value !== 'object') return value
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [this.redact(name, key), this.scrub(name, item)]))
+  }
+
   private ensure(name: string): ServerStatus {
     let status = this.servers.get(name)
     if (!status) {
-      status = { name, phase: 'disabled', since: Date.now(), tools: [], logs: [] }
+      status = { name, phase: 'disabled', since: Date.now(), tools: [], catalog: [], logs: [] }
       this.servers.set(name, status)
     }
     return status
@@ -145,11 +158,19 @@ export class StatusBoard {
     }
   }
 
-  snapshot(toolsOf: (name: string) => string[]): ServerStatus[] {
-    return [...this.servers.values()].map(status => ({
-      ...status,
-      tools: status.phase === 'disabled' || status.phase === 'invalid' ? [] : toolsOf(status.name),
-      logs: status.logs.slice(),
-    }))
+  snapshot(catalogOf: (name: string) => ToolInfo[]): ServerStatus[] {
+    return [...this.servers.values()].map((status) => {
+      const offered = status.phase === 'disabled' || status.phase === 'invalid' ? [] : catalogOf(status.name)
+      // Tool text comes from the server; a server may echo what it was started with.
+      const catalog = this.secrets.has(status.name)
+        ? offered.map(tool => this.scrub(status.name, tool) as ToolInfo)
+        : offered
+      return {
+        ...status,
+        tools: catalog.filter(tool => tool.enabled).map(tool => tool.name),
+        catalog,
+        logs: status.logs.slice(),
+      }
+    })
   }
 }
