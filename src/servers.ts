@@ -29,6 +29,8 @@ export interface ServerEntry {
   /** Extra request headers; values may hold `${secret:REF}` / `${env:VAR}`. */
   headers: Record<string, string>
   toolCallTimeoutMs: number
+  /** Tools kept from the model, by name after `mcp__<name>__`; switched without reconnecting. */
+  disabledTools: string[]
 }
 
 /** Same rule as dsh-mcp-client's `serverName`. */
@@ -47,6 +49,8 @@ export const ServerEntry: Schema<ServerEntry> = Schema.object({
   url: Schema.string().default(''),
   headers: Schema.dict(Schema.string()).default({}),
   toolCallTimeoutMs: Schema.natural().min(1000).default(60_000),
+  disabledTools: Schema.array(Schema.string()).default([])
+    .description('不提供给模型的工具，写 mcp__<名称>__ 之后的部分'),
 }) as unknown as Schema<ServerEntry>
 
 /** Fill every field, tolerating values written by hand into cordis.patch.yml. */
@@ -71,6 +75,7 @@ export function normalizeEntry(raw: { readonly [K in keyof ServerEntry]?: unknow
     toolCallTimeoutMs: typeof raw.toolCallTimeoutMs === 'number' && raw.toolCallTimeoutMs >= 1000
       ? raw.toolCallTimeoutMs
       : 60_000,
+    disabledTools: [...new Set(strings(raw.disabledTools))],
   }
 }
 
@@ -94,11 +99,11 @@ export function problemOf(entry: ServerEntry): string | undefined {
 
 /**
  * Identity of a running connection: a server restarts when, and only when,
- * something that reaches the MCP client changed. `enabled` and `description`
- * are deliberately left out.
+ * something that reaches the MCP client changed. `enabled`, `description` and
+ * `disabledTools` are deliberately left out.
  */
 export function connectionKey(entry: ServerEntry): string {
-  const { enabled: _enabled, description: _description, ...rest } = entry
+  const { enabled: _enabled, description: _description, disabledTools: _disabledTools, ...rest } = entry
   const sorted = (record: Record<string, string>) =>
     Object.fromEntries(Object.entries(record).sort(([a], [b]) => a.localeCompare(b)))
   return JSON.stringify({ ...rest, env: sorted(rest.env), headers: sorted(rest.headers) })

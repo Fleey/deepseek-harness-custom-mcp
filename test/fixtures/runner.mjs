@@ -49,7 +49,7 @@ const initial = [
   stdio('beta', { enabled: false, command: 'node', args: [fakeServer, '--dump', dump('beta')] }),
   { name: 'gamma', transport: 'streamable-http', url: 'http://127.0.0.1:9/mcp' },
   stdio('delta', { command: 'definitely-not-a-command-xyz' }),
-  stdio('eps', { env: { FAKE_TOKEN: '${secret:LATER_TOKEN}' } }),
+  stdio('eps', { env: { FAKE_TOKEN: '${secret:LATER_TOKEN}' }, disabledTools: ['ping'] }),
 ]
 
 const fiber = root.plugin(plugin, { servers: initial, loginShellTimeoutMs: 8000 })
@@ -99,6 +99,28 @@ assert.equal(s.eps.phase, 'invalid')
 assert.match(s.eps.lastError, /LATER_TOKEN/)
 step('alpha connected with secret env; disabled/invalid entries reported')
 
+// 1b. single tools: details for the page, switched off and on without reconnecting
+assert.deepEqual(s.alpha.catalog.map(tool => [tool.name, tool.enabled]), [['echo', true], ['env', true], ['ping', true]])
+const echo = s.alpha.catalog.find(tool => tool.name === 'echo')
+assert.equal(echo.description, 'Echo the given text.')
+assert.deepEqual(echo.parameters.required, ['text'])
+const pingBefore = registered.get('mcp__alpha__ping')
+const alphaSince = s.alpha.since
+updateVolatile(servers, createVolatile([{ ...initial[0], disabledTools: ['env', 'not-offered'] }, ...initial.slice(1)]))
+root.emit('loader/volatile-update')
+await until('alpha env withdrawn', async () => !registered.has('mcp__alpha__env'))
+s = await status()
+assert.deepEqual(s.alpha.tools, ['echo', 'ping'])
+assert.deepEqual(s.alpha.catalog.map(tool => [tool.name, tool.enabled]), [['echo', true], ['env', false], ['ping', true]])
+assert.equal(s.alpha.phase, 'connected')
+assert.equal(s.alpha.since, alphaSince, 'no reconnect')
+assert.equal(registered.get('mcp__alpha__ping'), pingBefore, 'other tools untouched')
+updateVolatile(servers, createVolatile(initial))
+root.emit('loader/volatile-update')
+await until('alpha env back', async () => registered.has('mcp__alpha__env'))
+assert.equal(registered.get('mcp__alpha__ping'), pingBefore)
+step('single tools switch off and on in place, with descriptions and schemas')
+
 await until('gamma retrying', async () => (await status()).gamma?.phase === 'retrying')
 s = await status()
 assert.ok(s.gamma.lastError, 'gamma carries its connection error')
@@ -132,7 +154,9 @@ store.set('LATER_TOKEN', 'later-value-123')
 root.emit('credentials/reference-updated', 'LATER_TOKEN')
 await until('eps connected', async () => (await status()).eps?.phase === 'connected')
 assert.equal(JSON.parse(readFileSync(dump('eps'), 'utf8')).token, 'later-value-123')
-step('eps starts once its credential is stored')
+assert.ok(!registered.has('mcp__eps__ping') && registered.has('mcp__eps__echo'), 'eps starts with ping switched off')
+assert.deepEqual((await status()).eps.tools, ['echo', 'env'])
+step('eps starts once its credential is stored, ping switched off from the start')
 
 // 4. restart route: guarded, then restarts
 let r = await call('/dsh-custom-mcp/restart', { method: 'POST', headers: { 'content-type': 'application/json', 'sec-fetch-site': 'cross-site' }, body: '{"name":"eps"}' })
@@ -142,6 +166,7 @@ assert.equal(r.statusCode, 403, 'non-JSON restart refused')
 r = await call('/dsh-custom-mcp/restart', { method: 'POST', headers: { 'content-type': 'application/json', origin: 'http://127.0.0.1:3080' }, body: '{"name":"eps"}' })
 assert.equal(r.statusCode, 200)
 await until('eps reconnected', async () => (await status()).eps?.phase === 'connected')
+assert.ok(!registered.has('mcp__eps__ping'), 'switched-off tools stay off across a reconnect')
 step('restart route guarded and working')
 
 // 5. secrets never reach the page

@@ -18,6 +18,8 @@ const parseImport = plain(mod.internals.parseImport)
 const fromDraft = plain(mod.internals.fromDraft)
 const toDraft = plain(mod.internals.toDraft)
 const compact = plain(mod.internals.compact)
+const normalize = plain(mod.internals.normalize)
+const describeParameters = plain(mod.internals.describeParameters)
 const t = key => key
 
 test('module shape', () => {
@@ -105,4 +107,47 @@ test('compact leaves defaults out and round-trips through toDraft', () => {
   assert.equal(draft.env[0].stored, true)
   assert.equal(draft.env[0].ref, 'MCP_X')
   assert.equal(draft.env[0].value, '')
+})
+
+test('disabledTools: normalized, written only when set, kept by the editor', () => {
+  const entry = normalize({ name: 'x', command: 'c', disabledTools: ['b', 2, 'a', 'b'] })
+  assert.deepEqual(entry.disabledTools, ['b', 'a'])
+  assert.deepEqual(normalize({ name: 'x', command: 'c' }).disabledTools, [])
+  assert.deepEqual(compact(entry).disabledTools, ['b', 'a'])
+  assert.equal('disabledTools' in compact({ ...entry, disabledTools: [] }), false)
+  // Saving from the editor must not switch tools back on.
+  const draft = toDraft(entry)
+  const saved = fromDraft({ ...draft, description: 'edited' }, new Set(), t)
+  assert.deepEqual(saved.errors, {})
+  assert.deepEqual(saved.entry.disabledTools, ['b', 'a'])
+})
+
+test('parseImport keeps disabledTools', () => {
+  const json = JSON.stringify({ mcpServers: { a: { command: 'x', disabledTools: ['t1', 't2'] }, b: { command: 'y' } } })
+  const byName = Object.fromEntries(parseImport(json, [], t).entries.map(e => [e.name, e]))
+  assert.deepEqual(byName.a.disabledTools, ['t1', 't2'])
+  assert.deepEqual(byName.b.disabledTools, [])
+})
+
+test('describeParameters summarises an input schema', () => {
+  const params = describeParameters({
+    type: 'object',
+    properties: {
+      Region: { type: 'string', description: 'Region code', enum: ['ap-guangzhou', 'ap-singapore'] },
+      Limit: { type: 'integer', default: 20 },
+      Tags: { type: 'array', items: { type: 'string' } },
+      From: { anyOf: [{ type: 'number' }, { type: 'null' }], title: 'Start time' },
+      Mode: { type: ['string', 'null'] },
+    },
+    required: ['Region'],
+  })
+  assert.deepEqual(params, [
+    { name: 'Region', type: 'string', required: true, description: 'Region code', values: 'ap-guangzhou, ap-singapore' },
+    { name: 'Limit', type: 'integer', required: false, description: '', default: '20' },
+    { name: 'Tags', type: 'string[]', required: false, description: '' },
+    { name: 'From', type: 'number | null', required: false, description: 'Start time' },
+    { name: 'Mode', type: 'string | null', required: false, description: '' },
+  ])
+  assert.deepEqual(describeParameters(undefined), [])
+  assert.deepEqual(describeParameters({ type: 'object' }), [])
 })

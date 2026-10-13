@@ -6,6 +6,8 @@
  *
  *   - lists the configured servers with a live status (polled from the host
  *     half at /dsh-custom-mcp/status) and an on/off switch per server;
+ *   - switches single tools on and off by clicking them, and shows a tool's
+ *     description and parameters on hover;
  *   - adds and edits servers (stdio command or Streamable HTTP URL, args,
  *     env, headers, timeout); env/header values marked secret go to the dsh
  *     credential store and the config keeps only a `${secret:REF}` reference;
@@ -58,6 +60,7 @@ window.__ModuleLoader__.load({
       phase_invalid: '配置有误',
       phase_starting: '连接中…',
       phase_connected: '已连接 · {n} 个工具',
+      phase_connected_partial: '已连接 · 已启用 {n}/{total} 个工具',
       phase_retrying: '连接失败，正在重试',
       phase_reconnecting: '连接断开，正在重连',
       phase_failed: '连接失败',
@@ -73,6 +76,17 @@ window.__ModuleLoader__.load({
       back: '返回列表',
       tools: '工具',
       noTools: '没有发现工具',
+      toolsHint: '点击工具可启用或禁用，悬停查看说明和参数。禁用的工具不会提供给模型，切换无需重连。',
+      toolOn: '已启用',
+      toolOff: '已禁用',
+      toolClickOff: '点击可禁用这个工具',
+      toolClickOn: '点击可启用这个工具',
+      toolNoDescription: '服务器没有提供说明。',
+      toolParams: '参数',
+      toolNoParams: '无参数',
+      toolRequired: '必填',
+      toolValues: '可选值：{v}',
+      toolDefault: '默认值：{v}',
       lastError: '最近错误',
       logs: '最近日志',
       showLogs: '显示日志',
@@ -149,6 +163,7 @@ window.__ModuleLoader__.load({
       phase_invalid: 'Needs attention',
       phase_starting: 'Connecting…',
       phase_connected: 'Connected · {n} tools',
+      phase_connected_partial: 'Connected · {n}/{total} tools enabled',
       phase_retrying: 'Connection failed, retrying',
       phase_reconnecting: 'Connection lost, reconnecting',
       phase_failed: 'Connection failed',
@@ -164,6 +179,17 @@ window.__ModuleLoader__.load({
       back: 'Back to list',
       tools: 'Tools',
       noTools: 'No tools discovered',
+      toolsHint: 'Click a tool to switch it on or off; hover for its description and parameters. Switched-off tools are not offered to the model; no reconnect needed.',
+      toolOn: 'Enabled',
+      toolOff: 'Disabled',
+      toolClickOff: 'Click to disable this tool',
+      toolClickOn: 'Click to enable this tool',
+      toolNoDescription: 'The server gives no description.',
+      toolParams: 'Parameters',
+      toolNoParams: 'No parameters',
+      toolRequired: 'required',
+      toolValues: 'One of: {v}',
+      toolDefault: 'Default: {v}',
       lastError: 'Last error',
       logs: 'Recent log',
       showLogs: 'Show log',
@@ -248,6 +274,23 @@ window.__ModuleLoader__.load({
 .dcm-label{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
 .dcm-chips{display:flex;flex-wrap:wrap;gap:6px}
 .dcm-chip{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:20px;padding:0 8px;border-radius:var(--dsw-radius-xs,4px);background:var(--dsw-alias-fill-tsp-secondary);color:var(--dsw-alias-label-secondary)}
+.dcm-tool{border:none;margin:0;cursor:pointer;transition:background .15s,color .15s}
+.dcm-tool:hover:not([aria-disabled=true]){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
+.dcm-tool:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:1px}
+.dcm-tool[aria-pressed=false]{background:none;box-shadow:inset 0 0 0 .5px var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary);text-decoration:line-through}
+.dcm-tool[aria-disabled=true]{cursor:default}
+.dcm-tip{display:flex;flex-direction:column;gap:8px;min-height:0;overflow:auto;padding:12px 16px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
+.dcm-tip-head{display:flex;align-items:center;gap:8px;min-width:0}
+.dcm-tip-name{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:20px;font-weight:500;color:var(--dsw-alias-label-primary);word-break:break-all}
+.dcm-tip-public,.dcm-param-name,.dcm-param-type{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.dcm-tip-public,.dcm-param-type,.dcm-tip-foot{color:var(--dsw-alias-label-tertiary)}
+.dcm-tip-public{word-break:break-all}
+.dcm-tip-desc,.dcm-param-desc{white-space:pre-wrap;word-break:break-word}
+.dcm-tip-section{padding-top:8px;border-top:.5px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary)}
+.dcm-params{display:flex;flex-direction:column;gap:6px}
+.dcm-param-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px}
+.dcm-param-name{color:var(--dsw-alias-label-primary)}
+.dcm-param-req{font-size:11px;color:var(--dsw-alias-state-error-primary)}
 .dcm-pre{margin:0;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;padding:8px 10px;border-radius:var(--dsw-radius-sm,6px);background:var(--dsw-alias-bg-module-platform);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
 .dcm-pre[data-tone=error]{color:var(--dsw-alias-state-error-primary)}
 .dcm-empty{padding:48px 16px;text-align:center;display:flex;flex-direction:column;gap:8px;align-items:center}
@@ -363,6 +406,9 @@ window.__ModuleLoader__.load({
       return refs
     }
 
+    /** Distinct strings of a list, anything else dropped. */
+    const stringList = (value) => (Array.isArray(value) ? [...new Set(value.filter(item => typeof item === 'string'))] : [])
+
     /** Fill defaults so the page can rely on every field. */
     function normalize(raw) {
       const entry = raw && typeof raw === 'object' ? raw : {}
@@ -378,6 +424,7 @@ window.__ModuleLoader__.load({
         url: typeof entry.url === 'string' ? entry.url : '',
         headers: entry.headers && typeof entry.headers === 'object' ? { ...entry.headers } : {},
         toolCallTimeoutMs: typeof entry.toolCallTimeoutMs === 'number' ? entry.toolCallTimeoutMs : DEFAULT_TIMEOUT_MS,
+        disabledTools: stringList(entry.disabledTools),
       }
     }
 
@@ -397,6 +444,7 @@ window.__ModuleLoader__.load({
         if (entry.cwd) out.cwd = entry.cwd
       }
       if (entry.toolCallTimeoutMs && entry.toolCallTimeoutMs !== DEFAULT_TIMEOUT_MS) out.toolCallTimeoutMs = entry.toolCallTimeoutMs
+      if ((entry.disabledTools || []).length) out.disabledTools = [...entry.disabledTools]
       return out
     }
 
@@ -434,6 +482,8 @@ window.__ModuleLoader__.load({
         timeoutSec: String(Math.round(e.toolCallTimeoutMs / 1000)),
         env: rowsOf(e.env),
         headers: rowsOf(e.headers),
+        // Not edited here (tools are switched from the list); saving keeps it.
+        disabledTools: e.disabledTools,
       }
     }
 
@@ -511,6 +561,7 @@ window.__ModuleLoader__.load({
           url: draft.url.trim(),
           headers,
           toolCallTimeoutMs: Math.max(1000, Math.round(seconds * 1000)),
+          disabledTools: draft.disabledTools,
         }),
       }
     }
@@ -583,10 +634,62 @@ window.__ModuleLoader__.load({
           url: isHttp ? envInterpolation(spec.url ?? '') : '',
           headers: isHttp ? move(spec.headers, 'HDR') : {},
           toolCallTimeoutMs: typeof spec.timeout === 'number' && spec.timeout >= 1000 ? spec.timeout : DEFAULT_TIMEOUT_MS,
+          // Roo Code, Windsurf and others keep switched-off tools here.
+          disabledTools: spec.disabledTools,
         }))
         taken.add(name)
       }
       return { entries, secrets, notes }
+    }
+
+    // ---- tool details -------------------------------------------------------------
+
+    const literal = (value) => (typeof value === 'string' ? value : JSON.stringify(value))
+
+    /** Short type of a JSON Schema node: `string`, `number | null`, `string[]`… */
+    function typeLabel(schema) {
+      if (!schema || typeof schema !== 'object') return ''
+      const variants = Array.isArray(schema.anyOf) ? schema.anyOf : Array.isArray(schema.oneOf) ? schema.oneOf : undefined
+      let label = ''
+      if (Array.isArray(schema.type)) label = schema.type.join(' | ')
+      else if (typeof schema.type === 'string') label = schema.type
+      else if (variants) label = [...new Set(variants.map(typeLabel).filter(Boolean))].join(' | ')
+      else if (schema.const !== undefined) label = literal(schema.const)
+      if (label === 'array' && schema.items && typeof schema.items === 'object' && !Array.isArray(schema.items)) {
+        const inner = typeLabel(schema.items)
+        if (inner) label = inner.includes(' ') ? `(${inner})[]` : `${inner}[]`
+      }
+      return label
+    }
+
+    /**
+     * Top-level arguments of a tool's input schema, in the server's order.
+     * @returns {Array<{ name: string, type: string, required: boolean, description: string, values?: string, default?: string }>}
+     */
+    function describeParameters(schema) {
+      if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return []
+      const props = schema.properties && typeof schema.properties === 'object' && !Array.isArray(schema.properties) ? schema.properties : {}
+      const required = new Set(Array.isArray(schema.required) ? schema.required : [])
+      return Object.entries(props).map(([name, raw]) => {
+        const prop = raw && typeof raw === 'object' ? raw : {}
+        const out = {
+          name,
+          type: typeLabel(prop),
+          required: required.has(name),
+          description: typeof prop.description === 'string' ? prop.description : typeof prop.title === 'string' ? prop.title : '',
+        }
+        const values = Array.isArray(prop.enum) ? prop.enum : Array.isArray(prop.items?.enum) ? prop.items.enum : undefined
+        if (values) out.values = values.map(literal).join(', ')
+        if (prop.default !== undefined) out.default = literal(prop.default)
+        return out
+      })
+    }
+
+    /** Tools a status lists, with details when the host sends them. */
+    function catalogOf(status) {
+      if (!status) return []
+      if (Array.isArray(status.catalog)) return status.catalog
+      return (status.tools || []).map(name => ({ name, description: '', enabled: true }))
     }
 
     // ---- controller: form, status polling, writes -------------------------------
@@ -686,7 +789,15 @@ window.__ModuleLoader__.load({
       if (!entry.enabled) return { state: 'idle', text: t('phase_disabled'), tone: 'idle' }
       if (!status) return { state: 'ongoing', text: t('phase_unknown'), tone: 'idle' }
       switch (status.phase) {
-        case 'connected': return { state: 'done', text: fmt(t('phase_connected'), { n: status.tools.length }), tone: 'done' }
+        case 'connected': {
+          const catalog = catalogOf(status)
+          const off = new Set(entry.disabledTools)
+          const on = catalog.filter(tool => !off.has(tool.name)).length
+          const text = on === catalog.length
+            ? fmt(t('phase_connected'), { n: on })
+            : fmt(t('phase_connected_partial'), { n: on, total: catalog.length })
+          return { state: 'done', text, tone: 'done' }
+        }
         case 'starting': return { state: 'ongoing', text: t('phase_starting'), tone: 'idle' }
         case 'retrying': return { state: 'warning', text: t('phase_retrying'), tone: 'warning' }
         case 'reconnecting': return { state: 'warning', text: t('phase_reconnecting'), tone: 'warning' }
@@ -703,9 +814,68 @@ window.__ModuleLoader__.load({
       return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
     }
 
+    /** Plain-text details, for runtimes without HoverCard. */
+    function toolSummary(t, server, tool, enabled) {
+      const lines = [`mcp__${server}__${tool.name} · ${enabled ? t('toolOn') : t('toolOff')}`]
+      if (tool.description) lines.push(tool.description)
+      const params = describeParameters(tool.parameters)
+      if (params.length) lines.push(`${t('toolParams')}: ${params.map(p => (p.required ? `${p.name}*` : p.name)).join(', ')}`)
+      return lines.join('\n')
+    }
+
+    function ToolDetail(props) {
+      const { t, server, tool, enabled, locked } = props
+      const params = describeParameters(tool.parameters)
+      return h('div', { className: 'dcm-tip' },
+        h('div', { className: 'dcm-tip-head' },
+          h('span', { className: 'dcm-tip-name' }, tool.name),
+          h(P.Tag, { tone: enabled ? 'success' : 'neutral' }, enabled ? t('toolOn') : t('toolOff')),
+        ),
+        h('div', { className: 'dcm-tip-public' }, `mcp__${server}__${tool.name}`),
+        h('div', { className: 'dcm-tip-desc' }, tool.description || t('toolNoDescription')),
+        h('div', { className: 'dcm-tip-section' }, t('toolParams')),
+        params.length
+          ? h('div', { className: 'dcm-params' }, params.map(param => h('div', { key: param.name },
+            h('div', { className: 'dcm-param-head' },
+              h('span', { className: 'dcm-param-name' }, param.name),
+              param.type ? h('span', { className: 'dcm-param-type' }, param.type) : null,
+              param.required ? h('span', { className: 'dcm-param-req' }, t('toolRequired')) : null,
+            ),
+            param.description ? h('div', { className: 'dcm-param-desc' }, param.description) : null,
+            param.values ? h('div', { className: 'dcm-param-desc' }, fmt(t('toolValues'), { v: param.values })) : null,
+            param.default !== undefined ? h('div', { className: 'dcm-param-desc' }, fmt(t('toolDefault'), { v: param.default })) : null,
+          )))
+          : h('div', null, t('toolNoParams')),
+        locked ? null : h('div', { className: 'dcm-tip-foot' }, enabled ? t('toolClickOff') : t('toolClickOn')),
+      )
+    }
+
+    /** One tool: click switches it, hover shows its details. */
+    function ToolChip(props) {
+      const { t, server, tool, enabled, locked, onToggle, widthRef } = props
+      const chip = h('button', {
+        type: 'button',
+        className: 'dcm-chip dcm-tool',
+        'aria-pressed': enabled,
+        // Not `disabled`: a disabled button swallows the hover that opens the details.
+        'aria-disabled': locked || undefined,
+        title: P.HoverCard ? undefined : toolSummary(t, server, tool, enabled),
+        onClick: () => { if (!locked) onToggle(!enabled) },
+      }, tool.name)
+      if (!P.HoverCard) return chip
+      return h(P.HoverCard, {
+        anchor: chip,
+        content: h(ToolDetail, { t, server, tool, enabled, locked }),
+        openDelayMs: 350,
+        variant: 'preview',
+        widthAnchorRef: widthRef,
+      })
+    }
+
     function ServerRow(props) {
-      const { t, entry, status, busy, writable, onToggle, onEdit, onRemove, onRestart } = props
+      const { t, entry, status, busy, writable, onToggle, onToggleTool, onEdit, onRemove, onRestart } = props
       const [open, setOpen] = useState(false)
+      const chipsRef = useRef(null)
       const [logs, setLogs] = useState(false)
       const [confirm, setConfirm] = useState(false)
       useEffect(() => {
@@ -759,8 +929,20 @@ window.__ModuleLoader__.load({
             entry.enabled && status && status.phase === 'connected'
               ? h('div', { className: 'dcm-block' },
                 h('div', { className: 'dcm-label' }, t('tools')),
-                status.tools.length
-                  ? h('div', { className: 'dcm-chips' }, status.tools.map(tool => h('span', { key: tool, className: 'dcm-chip' }, tool)))
+                catalogOf(status).length
+                  ? [
+                    h('div', { key: 'chips', className: 'dcm-chips', ref: chipsRef }, catalogOf(status).map(tool => h(ToolChip, {
+                      key: tool.name,
+                      t,
+                      server: entry.name,
+                      tool,
+                      enabled: !entry.disabledTools.includes(tool.name),
+                      locked: busy || !writable,
+                      widthRef: chipsRef,
+                      onToggle: (enabled) => onToggleTool(tool.name, enabled),
+                    }))),
+                    h('div', { key: 'hint', className: 'dcm-hint' }, t('toolsHint')),
+                  ]
                   : h('div', { className: 'dcm-hint' }, t('noTools')),
               )
               : null,
@@ -1120,6 +1302,14 @@ window.__ModuleLoader__.load({
         void write(name, controller.servers().map(entry => (entry.name === name ? { ...entry, enabled } : entry)))
       }
 
+      const toggleTool = (name, tool, enabled) => {
+        void write(name, controller.servers().map((entry) => {
+          if (entry.name !== name) return entry
+          const off = entry.disabledTools.filter(item => item !== tool)
+          return { ...entry, disabledTools: enabled ? off : [...off, tool] }
+        }))
+      }
+
       const remove = async (name) => {
         const before = controller.servers()
         const after = before.filter(entry => entry.name !== name)
@@ -1224,6 +1414,7 @@ window.__ModuleLoader__.load({
           busy: Boolean(busy[entry.name]),
           writable,
           onToggle: (enabled) => toggle(entry.name, enabled),
+          onToggleTool: (tool, enabled) => toggleTool(entry.name, tool, enabled),
           onEdit: () => setMode({ kind: 'edit', name: entry.name }),
           onRemove: () => { void remove(entry.name) },
           onRestart: () => { void restart(entry.name) },
@@ -1243,7 +1434,7 @@ window.__ModuleLoader__.load({
 
     return {
       /** Pure helpers, exposed for test/client.test.mjs. */
-      internals: { splitCommandLine, parseImport, fromDraft, toDraft, compact, makeRef, sanitizeName, secretRefsOf },
+      internals: { splitCommandLine, parseImport, fromDraft, toDraft, compact, normalize, makeRef, sanitizeName, secretRefsOf, describeParameters },
       inject: ['slots', 'locale', 'remote', 'remote.credentials', 'configForms'],
       apply(ctx) {
         ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-custom-mcp: dictionaries')
