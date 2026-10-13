@@ -60,7 +60,7 @@ ELECTRON_RUN_AS_NODE=1 DSH_HOME="$HOME/.dsh" "/Applications/DSH NEXT.app/Content
 
 重新打开桌面版 → 设置 → MCP 服务器。卸载把 `add <路径>` 换成 `remove dsh-custom-mcp`。
 
-也可以 `pnpm pack` 后安装生成的 `dsh-custom-mcp-0.1.0.tgz`。
+也可以 `pnpm pack` 后安装生成的 `dsh-custom-mcp-0.2.0.tgz`。
 
 ## 配置
 
