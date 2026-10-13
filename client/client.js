@@ -279,6 +279,8 @@ window.__ModuleLoader__.load({
 .dcm-tool:focus-visible{outline:var(--dsw-focus-ring-width,2px) solid var(--dsw-focus-ring-color,var(--dsw-alias-state-business-primary));outline-offset:1px}
 .dcm-tool[aria-pressed=false]{background:none;box-shadow:inset 0 0 0 .5px var(--dsw-alias-border-l2);color:var(--dsw-alias-label-tertiary);text-decoration:line-through}
 .dcm-tool[aria-disabled=true]{cursor:default}
+/* HoverCard portals its card to <body> at z-index 100, under the Settings Modal (1000); lift ours to the 1100 that portaled tooltips and menus use. */
+body>:has(>.dcm-tip){z-index:1100}
 .dcm-tip{display:flex;flex-direction:column;gap:8px;min-height:0;overflow:auto;padding:12px 16px;font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary)}
 .dcm-tip-head{display:flex;align-items:center;gap:8px;min-width:0}
 .dcm-tip-name{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:20px;font-weight:500;color:var(--dsw-alias-label-primary);word-break:break-all}

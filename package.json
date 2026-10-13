@@ -1,6 +1,6 @@
 {
   "name": "dsh-custom-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "DeepSeek Harness plugin: manage MCP servers from Settings — add, edit, switch servers and single tools on/off, live status — without editing cordis.yml.",
   "type": "module",
   "main": "lib/index.js",
