@@ -1,0 +1,7 @@
+# dsh-custom-mcp bundle layer: mount the MCP server manager.
+# Servers are added, edited and switched on/off from Settings → MCP 服务器;
+# the page writes them into this row's `servers` field in your profile's
+# cordis.patch.yml, so there is nothing to configure here.
+- insert:
+    - id: custom-mcp
+      name: dsh-custom-mcp
