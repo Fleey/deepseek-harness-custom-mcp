@@ -272,7 +272,7 @@ window.__ModuleLoader__.load({
 .dcm-icon{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:none;border-radius:var(--dsw-radius-sm,6px);background:none;color:var(--dsw-alias-label-secondary);cursor:pointer;padding:0}
 .dcm-icon:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
 .dcm-icon:disabled{opacity:.4;cursor:default}
-.dcm-footer{display:flex;justify-content:flex-end;gap:8px;padding:12px 0;position:sticky;bottom:0;background:var(--dsw-alias-bg-layer-2);border-top:.5px solid var(--dsw-alias-border-l2)}
+.dcm-footer{display:flex;justify-content:flex-end;gap:8px;padding:16px 0 4px}
 .dcm-danger{color:var(--dsw-alias-state-error-primary)}
 `
 
