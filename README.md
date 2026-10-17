@@ -2,6 +2,23 @@
 
 在 DeepSeek Harness 的「设置」里管理 MCP 服务器：添加、编辑、开关、删除、查看连接状态和工具列表，全部即时生效，不用手改 `cordis.yml`，也不用重启。
 
+## 插件界面
+
+<img width="1608" height="1032" alt="image" src="https://github.com/user-attachments/assets/476d6986-f43d-4764-9221-22b4b030652c" />
+
+<img width="1668" height="1420" alt="image" src="https://github.com/user-attachments/assets/e1f54b3e-3c3d-4382-a9f7-aaf6566b4bfa" />
+
+
+支持显示mcp远程工具描述
+
+<img width="1646" height="1102" alt="image" src="https://github.com/user-attachments/assets/8440ad0e-6b90-4f6d-8e43-d95c799bfff4" />
+
+支持点击mcp禁用某个工具
+
+<img width="1878" height="816" alt="image" src="https://github.com/user-attachments/assets/0f508ff8-0af9-4842-a8f1-888096ec7d1d" />
+
+
+
 ## 功能
 
 - **设置侧栏新增「MCP 服务器」页**（位于「内置插件」之后）。
